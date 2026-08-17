@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "DeepGuard",
+    "slug": "DeepGuard",
+    "scheme": "deepguard",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "DeepGuard cần quyền camera để chụp/quay kiểm tra deepfake.",
+        "NSPhotoLibraryUsageDescription": "DeepGuard cần quyền thư viện để chọn ảnh/video kiểm tra."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0f172a",
+        "foregroundImage": "./assets/logo.png"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO"
+      ],
+      "package": "com.huyhoan.DeepGuard"
+    },
+    "web": {
+      "favicon": "./assets/logo.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "DeepGuard cần quyền thư viện để chọn ảnh/video.",
+          "cameraPermission": "DeepGuard cần quyền camera để chụp/quay."
+        }
+      ],
+      "expo-asset"
+    ]
+  }
+}
