@@ -112,6 +112,9 @@ export const vi = {
   'model.msfv_dfdc.desc': 'Huấn luyện trên bộ DFDC',
   'model.msfv_ffpp.desc': 'Huấn luyện trên bộ FaceForensics++',
   'model.msfv_lstm_wild.desc': 'Huấn luyện Wild + cross DFDC/FF++/Celeb',
+  'model.tlcnn.desc': 'Nhanh - phân tích 1 ảnh',
+  'model.unified.desc': 'Ổn định - chống nhiễu tốt',
+  'model.mobilenet.desc': 'Nhẹ nhất - 10 khung hình',
 };
 
 export type TranslationKey = keyof typeof vi;

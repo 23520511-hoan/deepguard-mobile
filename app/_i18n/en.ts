@@ -102,4 +102,7 @@ export const en: Record<TranslationKey, string> = {
   'model.msfv_dfdc.desc': 'Trained on DFDC',
   'model.msfv_ffpp.desc': 'Trained on FaceForensics++',
   'model.msfv_lstm_wild.desc': 'Trained on Wild, cross DFDC/FF++/Celeb',
+  'model.tlcnn.desc': 'Fast - single image',
+  'model.unified.desc': 'Robust - noise resistant',
+  'model.mobilenet.desc': 'Lightest - 10 frames',
 };
