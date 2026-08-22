@@ -4,15 +4,24 @@ import { getSpec } from '../_config/modelSpecs';
 import { buildInputTensor } from './preprocess';
 import { runInference, USE_REAL_MODEL } from './tfliteEngine';
 import { detectFaceCount } from './faceDetector';
+import { extractFrames } from './videoFrames';
 
-// Lỗi: không thấy khuôn mặt
+// ============================================================================
+//  ANALYZER — xử lý CẢ ẢNH LẪN VIDEO.
+//  - Ảnh: face detect -> model -> kết quả (như cũ).
+//  - Video: trích 10 khung -> mỗi khung: face detect + model
+//           -> tổng hợp timeline + kết luận (>50% khung fake = video giả).
+// ============================================================================
+
 export class NoFaceError extends Error {
   constructor() { super('NO_FACE'); this.name = 'NoFaceError'; }
 }
-// Lỗi: nhiều khuôn mặt
 export class MultiFaceError extends Error {
   count: number;
   constructor(count: number) { super('MULTI_FACE'); this.name = 'MultiFaceError'; this.count = count; }
+}
+export class VideoNoFaceError extends Error {
+  constructor() { super('VIDEO_NO_FACE'); this.name = 'VideoNoFaceError'; }
 }
 
 function rand(min: number, max: number): number { return Math.random() * (max - min) + min; }
@@ -25,73 +34,149 @@ function decide(fakeProb: number, threshold: number): Verdict {
   return 'uncertain';
 }
 
-function mockFrames(mediaUri: string, fakeProb: number): FrameEvidence[] {
-  const anomalyIndex = Math.floor(rand(0, 10));
-  return Array.from({ length: 10 }, (_, i) => ({
-    uri: mediaUri,
-    attention: i === anomalyIndex ? Math.max(0.6, fakeProb) : rand(0.05, 0.4),
-    anomaly: i === anomalyIndex,
-  }));
+function confidenceLabel(verdict: Verdict, score: number): string {
+  if (verdict === 'uncertain') return 'Không chắc chắn';
+  if (score >= 70) return 'Cao';
+  if (score >= 40) return 'Trung bình';
+  return 'Thấp';
 }
 
-export async function analyzeMedia(
-  mediaUri: string, mediaType: MediaType, modelId: string, threshold: number
+// ---- Chạy model trên 1 ảnh, trả xác suất fake ----
+async function inferOneImage(uri: string, modelId: string): Promise<{ prob: number; ms: number }> {
+  const spec = getSpec(modelId);
+  if (!USE_REAL_MODEL || !spec) {
+    await new Promise((r) => setTimeout(r, 200));
+    return { prob: rand(0.05, 0.95), ms: 80 };
+  }
+  const input = await buildInputTensor(uri, spec.numFrames, spec.inputSize, spec.normalize);
+  const inf = await runInference(modelId, input);
+  return { prob: inf.fakeProbability, ms: inf.latencyMs };
+}
+
+// ============================================================================
+//  PHÂN TÍCH ẢNH (giữ nguyên logic cũ)
+// ============================================================================
+async function analyzeImage(
+  mediaUri: string, modelId: string, threshold: number
 ): Promise<AnalysisResult> {
   const model = getModelById(modelId);
+
+  const fc = await detectFaceCount(mediaUri);
+  if (fc.available) {
+    if (fc.count === 0) throw new NoFaceError();
+    if (fc.count > 1) throw new MultiFaceError(fc.count);
+  }
+
+  const { prob: fakeProbability, ms: latencyMs } = await inferOneImage(mediaUri, modelId);
   const spec = getSpec(modelId);
-
-  // === BƯỚC 1: KIỂM TRA KHUÔN MẶT (chỉ với ảnh) ===
-  // Nếu thư viện chạy được: 0 mặt -> NoFace; >1 mặt -> MultiFace.
-  // Nếu thư viện chưa sẵn sàng: bỏ qua, vẫn phân tích (không chặn app).
-  if (mediaType === 'image') {
-    const fc = await detectFaceCount(mediaUri);
-    if (fc.available) {
-      if (fc.count === 0) throw new NoFaceError();
-      if (fc.count > 1) throw new MultiFaceError(fc.count);
-    }
-  }
-
-  // === BƯỚC 2: PHÂN TÍCH ===
-  let fakeProbability: number;
-  let latencyMs: number;
-  let faceCount = 1;
-
-  const modelReady = USE_REAL_MODEL && spec != null;
-
-  if (modelReady && spec) {
-    const tPre0 = Date.now();
-    const input = await buildInputTensor(mediaUri, spec.numFrames, spec.inputSize, spec.normalize);
-    console.log('[SPEED] Tiền xử lý =', Date.now() - tPre0, 'ms');
-
-    const tRun0 = Date.now();
-    const inf = await runInference(modelId, input);
-    console.log('[SPEED] Chạy model =', Date.now() - tRun0, 'ms');
-
-    fakeProbability = inf.fakeProbability;
-    latencyMs = inf.latencyMs;
-  } else {
-    await new Promise((r) => setTimeout(r, 2000));
-    fakeProbability = rand(0.05, 0.95);
-    latencyMs = Math.round(rand(72, 92));
-  }
-
   const useThreshold = spec?.threshold ?? threshold ?? 0.5;
   const verdict = decide(fakeProbability, useThreshold);
   const distance = Math.abs(fakeProbability - 0.5) * 2;
   const score = Math.round(distance * 100);
 
-  let confidence: string;
-  if (verdict === 'uncertain') confidence = 'Không chắc chắn';
-  else if (score >= 70) confidence = 'Cao';
-  else if (score >= 40) confidence = 'Trung bình';
-  else confidence = 'Thấp';
-
   return {
     score, isFake: verdict === 'fake',
     fakeProbability: parseFloat(fakeProbability.toFixed(3)),
-    faces: faceCount, blurScore: 0, frequency: '',
-    confidence, warning: '',
+    faces: 1, blurScore: 0, frequency: '',
+    confidence: confidenceLabel(verdict, score), warning: '',
     latencyMs, modelId: model.id, precision: model.precision,
-    frames: mockFrames(mediaUri, fakeProbability),
+    frames: [], // ảnh không có timeline
   };
+}
+
+// ============================================================================
+//  PHÂN TÍCH VIDEO — trích khung, chạy model từng khung, tổng hợp
+// ============================================================================
+async function analyzeVideo(
+  mediaUri: string, modelId: string, threshold: number,
+  onProgress?: (done: number, total: number) => void
+): Promise<AnalysisResult> {
+  const model = getModelById(modelId);
+  const spec = getSpec(modelId);
+  const useThreshold = spec?.threshold ?? threshold ?? 0.5;
+
+  // 1) Trích 10 khung
+  const FRAME_COUNT = 10;
+  const vframes = await extractFrames(mediaUri, FRAME_COUNT);
+
+  // 2) Với mỗi khung: face detect + model
+  const frameResults: FrameEvidence[] = [];
+  const probs: number[] = [];
+  let framesWithFace = 0;
+  let totalMs = 0;
+
+  for (let i = 0; i < vframes.length; i++) {
+    const f = vframes[i];
+    onProgress?.(i, vframes.length);
+
+    // face detect trên khung
+    let hasFace = true;
+    const fc = await detectFaceCount(f.uri);
+    if (fc.available) hasFace = fc.count >= 1;
+
+    if (!hasFace) {
+      // khung không có mặt -> đánh dấu, không tính vào kết luận
+      frameResults.push({ uri: f.uri, attention: 0, anomaly: false });
+      continue;
+    }
+    framesWithFace++;
+
+    const { prob, ms } = await inferOneImage(f.uri, modelId);
+    totalMs += ms;
+    probs.push(prob);
+
+    const isFrameFake = prob >= useThreshold;
+    frameResults.push({
+      uri: f.uri,
+      attention: prob,          // dùng attention = xác suất fake của khung
+      anomaly: isFrameFake,     // anomaly = khung bị coi là giả
+    });
+  }
+
+  onProgress?.(vframes.length, vframes.length);
+
+  // 3) Không khung nào có mặt -> lỗi
+  if (framesWithFace === 0) throw new VideoNoFaceError();
+
+  // 4) Tổng hợp: % khung fake, xác suất trung bình
+  const fakeFrames = probs.filter((p) => p >= useThreshold).length;
+  const fakeRatio = fakeFrames / probs.length;      // 0..1
+  const avgProb = probs.reduce((a, b) => a + b, 0) / probs.length;
+
+  // Kết luận cả video: fake nếu >50% khung fake
+  const isFake = fakeRatio > 0.5;
+  // score = độ tin cậy theo tỉ lệ (càng lệch 50% càng chắc)
+  const score = Math.round(Math.abs(fakeRatio - 0.5) * 2 * 100);
+  const verdict: Verdict = fakeRatio > 0.5 ? 'fake' : (fakeRatio < 0.35 ? 'real' : 'uncertain');
+
+  return {
+    score,
+    isFake,
+    fakeProbability: parseFloat(avgProb.toFixed(3)),
+    faces: framesWithFace,          // số khung có mặt
+    blurScore: parseFloat(fakeRatio.toFixed(2)), // tái dụng field: tỉ lệ khung fake
+    frequency: `${fakeFrames}/${probs.length} khung nghi giả`,
+    confidence: confidenceLabel(verdict, score),
+    warning: '',
+    latencyMs: totalMs,
+    modelId: model.id,
+    precision: model.precision,
+    frames: frameResults,           // TIMELINE các khung
+  };
+}
+
+// ============================================================================
+//  ĐIỂM VÀO CHUNG — giữ nguyên chữ ký cũ, thêm onProgress tùy chọn
+// ============================================================================
+export async function analyzeMedia(
+  mediaUri: string,
+  mediaType: MediaType,
+  modelId: string,
+  threshold: number,
+  onProgress?: (done: number, total: number) => void
+): Promise<AnalysisResult> {
+  if (mediaType === 'video') {
+    return analyzeVideo(mediaUri, modelId, threshold, onProgress);
+  }
+  return analyzeImage(mediaUri, modelId, threshold);
 }

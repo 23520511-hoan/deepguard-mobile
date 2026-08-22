@@ -43,6 +43,8 @@ export const vi = {
   'processing.step2': 'Trích đặc trưng không gian',
   'processing.step3': 'Phân tích chuỗi thời gian',
   'processing.step4': 'Tính xác suất giả mạo',
+  'processing.videoSub': 'Đang phân tích khung',
+  'processing.videoNote': 'Video cần phân tích nhiều khung nên sẽ lâu hơn ảnh. Vui lòng đợi.',
 
   // error handling
   'error.noFaceTitle': 'Không tìm thấy khuôn mặt',
@@ -51,6 +53,8 @@ export const vi = {
   'error.multiFaceBody': 'Ảnh có nhiều hơn 1 khuôn mặt. Vui lòng chọn ảnh chỉ có 1 khuôn mặt để phân tích chính xác.',
   'error.genericTitle': 'Đã xảy ra lỗi',
   'error.genericBody': 'Không thể hoàn tất phân tích. Vui lòng thử lại.',
+  'error.videoNoFaceTitle': 'Không thấy khuôn mặt trong video',
+  'error.videoNoFaceBody': 'Không phát hiện khuôn mặt ở các khung đã trích. Vui lòng chọn video có khuôn mặt rõ ràng.',
 
   // result
   'result.real': 'CÓ KHẢ NĂNG THẬT',

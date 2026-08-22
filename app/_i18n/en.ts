@@ -40,6 +40,8 @@ export const en: Record<TranslationKey, string> = {
   'processing.step2': 'Extract spatial features',
   'processing.step3': 'Analyze temporal sequence',
   'processing.step4': 'Compute forgery probability',
+  'processing.videoSub': 'Analyzing frame',
+  'processing.videoNote': 'Video analysis processes multiple frames, so it takes longer. Please wait.',
 
   'error.noFaceTitle': 'No face found',
   'error.noFaceBody': 'No clear face detected. Please choose a photo/video with a front-facing, well-lit face.',
@@ -47,6 +49,8 @@ export const en: Record<TranslationKey, string> = {
   'error.multiFaceBody': 'The image has more than one face. Please choose an image with a single face.',
   'error.genericTitle': 'Something went wrong',
   'error.genericBody': 'Could not complete the analysis. Please try again.',
+  'error.videoNoFaceTitle': 'No face in video',
+  'error.videoNoFaceBody': 'No face detected in the sampled frames. Please choose a video with a clear face.',
 
   'result.real': 'LIKELY AUTHENTIC',
   'result.fake': 'DEEPFAKE DETECTED',
